@@ -1,5 +1,6 @@
 import pymysql
-
+from sqlalchemy import create_engine
+import pandas as pd
 
 class StockDataBase():
 
@@ -59,25 +60,54 @@ class StockDataBase():
     def insert(self, stock_id, data):
         if self.is_database_connected() == False: return  
         with self.conn.cursor() as cursor:
-            sql = """
-                INSERT INTO stock(stock_id, date, number_shares, total, open , max, min, end, diff, number_trades)
-                SELECT * FROM ( SELECT %s AS stock_id, %s AS date, %s AS number_shares, %s AS total, %s AS open, %s AS max, %s AS min, %s AS end, %s AS diff, %s AS number_trades)  AS tmp
+            query = """
+                INSERT INTO stock(stock_id, date, number_shares, total, 
+                                  open, max, min, end, 
+                                  diff, number_trades, predict_price)
+                SELECT * FROM ( 
+                    SELECT %s AS stock_id, %s AS date, %s AS number_shares, 
+                           %s AS total, %s AS open, %s AS max, 
+                           %s AS min, %s AS end, %s AS diff, 
+                           %s AS number_trades, null AS predict_price)  AS tmp
                 WHERE NOT EXISTS (
-                    SELECT stock_id, date FROM stock  WHERE stock_id = %s AND date = %s
+                    SELECT stock_id, date 
+                    FROM stock 
+                    WHERE stock_id = %s AND date = %s
                 ) LIMIT 1;
             """%(stock_id, data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], stock_id, data[0])
             
             try:
                 # Execute the SQL command
-                cursor.execute(sql)
+                cursor.execute(query)
                 # Commit your changes in the database
                 self.conn.commit()
                 # print("insert complete")
             except Exception as ex:
                 # Rollback in case there is any error
-                print(f"insert error: {ex}")
+                print(f"[database] failed to insert data, {ex}")
                 self.conn.rollback()
                 
+    def update_predict_price(stock_id, datetime, predct_price):
+        settings = self.get_db_setting()
+        with self.conn.cursor() as cursor:
+            query = """
+                UPDATE stock
+                SET predict_price = %s
+                WHERE stock_id = %s and date = %s
+            """.format(predict_price, stock_id, datetime)
+            try:
+                cursor.execute(query)
+                self.conn.commit()
+            except Exception as ex:
+                print(f"[database] fail to update data, {ex}")
+                self.conn.rollback()
+
+    def read_db_to_dataframe(query: str):
+        settings = self.get_db_setting()
+        db_connection_str = f'mysql+pymysql://{settings['user']}:{settings['password']}@{settings['host']}/{settings['db']}'
+        db_connection = create_engine(db_connection_str)
+        return pd.read_sql(query, con = db_connection)
 
 if __name__ == "__main__":
     db = StockDataBase()
+    
